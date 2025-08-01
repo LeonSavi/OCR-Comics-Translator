@@ -1,5 +1,5 @@
 deepL_api.py
-.jpeg
+*.jpeg
 __pycache__/
 *.tmp
-.pdf
+*.pdf
