@@ -61,11 +61,13 @@ def coord_list(results):
 
 
 def text_finding(image,reader,manga_lang,threshold_diff):
+
+    # sample results list: [([[700, 288], [748, 288], [748, 346], [700, 346]], '2', 0.35551235377397816), .....]
+    # sample iter_list: [((747.0, 150.75), ([[733.4538372406557, 100.02991888996713], [774.6499947000159, 106.76000847997456], [760.5461627593443, 200.97008111003285], [719.3500052999841, 195.23999152002543]], '2', 0.1305624074672238)),
     
-    results = reader.readtext(image, detail=1)
+    results = reader.readtext(image, detail=2)
 
     iter_list = coord_list(results)
-
     blocks = []
 
     while len(iter_list)>0:
@@ -108,7 +110,7 @@ def text_finding(image,reader,manga_lang,threshold_diff):
         if manga_lang == "es":
             cond = (text[0]=='i') and (text[1]!=' ') #it is a '!'
             if cond:
-                text=text[1:] 
+                text[0]='¡' # reverse exlamation mark
         
         blocks.append((coordinates, text.lower(), line_cnt))
     
@@ -137,9 +139,8 @@ def split_text(text, n_lines):
 
 
 def deepL_translate(blocks, source_l = "ES", target_l = "EN-GB"):
-
+    # block sample: [([(719.3500052999841, 100.02991888996713), (774.6499947000159, 200.97008111003285)], '2', 1), ...]
     trad_block = []
-
     for idx, box in enumerate(blocks):
         coord = box[0]
         text = box[1] #text
@@ -147,10 +148,9 @@ def deepL_translate(blocks, source_l = "ES", target_l = "EN-GB"):
 
         trad = deepl_client.translate_text(text,
                                            source_lang=source_l,
-                                           target_lang=target_l)
+                                           target_lang=target_l
+                                           ).text
         
-
-        # fake translation
         formatted_trad = split_text(trad,n_lines)
         
         trad_block.append((coord,text,formatted_trad))
@@ -202,7 +202,7 @@ def ffont_path(preferred_font="DejaVuSans.ttf"):
         font_path = os.path.join(font_dir, preferred_font)
 
     elif system == "Linux":
-        font_path = "/usr/share/fonts/truetype/dejavu"
+        font_path = f"/usr/share/fonts/truetype/dejavu/{preferred_font}"
 
     return font_path
 
