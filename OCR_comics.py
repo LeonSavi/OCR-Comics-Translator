@@ -1,39 +1,60 @@
-from bs4 import BeautifulSoup
-import requests
-import re
-import easyocr
-from PIL import Image, ImageDraw, ImageFont
-import numpy as np
-from deepL_api import api as DEEPL_API
-from pprint import pprint
+# IMPORTANT NOTE: the intent is only refactoring, no adding new functionalities
+# look for (##) for **personal style** comments
+
+## standard library
 from collections import defaultdict
 from copy import deepcopy
-import deepl
 from io import BytesIO
 import os
 import platform
+from pathlib import Path
+from pprint import pprint
+import re
+from typing import Any, Generator
+
+## third party libraries
+from bs4 import BeautifulSoup
+import deepl
+from deepL_api import api as DEEPL_API
+import easyocr
+import numpy as np
+from PIL import Image, ImageDraw, ImageFont
+import requests
 import torch
 
 
-deepl_client = deepl.DeepLClient(DEEPL_API) #to move below?
-
-_headers = {
+## constants are ALL_CAPS
+HEADERS = {
     "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
 }
 
-
-def get_images(_url):
-
-    r = requests.get(_url, headers=_headers) 
-    soup = BeautifulSoup(r.content, "html.parser").prettify()
-    
-    pattern = r'https[^"\']+?\.jpeg'
-    matches = re.findall(pattern, soup)
-
-    return [requests.get(i).content for i in matches]
+## compile regex if expression is constant
+## how about a better name ?
+PATTERN = re.compile(r'https[^"\']+?\.jpeg')
 
 
-def get_box(coord1,coord2=None):
+def get_images(url: str) -> Generator[bytes, Any, None]:
+    response = requests.get(url, headers=HEADERS) 
+    ## handle any errors
+    response.raise_for_status()
+    ## is prettify really needed ? we immediately search the str 
+    soup = BeautifulSoup(response.content, features="html.parser")
+    haystack = soup.prettify()
+    ## be explicit in what you expect to find
+    matches:list[str] = re.findall(PATTERN, haystack)
+    ## OLD:  return [requests.get(i).content for i in matches]
+    images = []
+    for m in matches:
+        resp = requests.get(m)
+        resp.raise_for_status()
+        img = resp.content
+        ## as you rely on this later, it's better to check it now 
+        ## (and maybe handle it in the appropriate way ?)
+        assert isinstance(img, bytes), "not all images were strings"
+        yield img
+
+
+def get_box(coord1, coord2=None):
 
     if coord2 == None:
         points = coord1
@@ -48,20 +69,36 @@ def get_box(coord1,coord2=None):
     return [(min_x,min_y),(max_x,max_y)]
 
 
-def coord_list(results):
+def coord_list(results: list):
     dict_res = defaultdict(tuple)
+
+    ## https://deepwiki.com/JaidedAI/EasyOCR/3-basic-usage
+    # for (bbox, text, prob) in results:
+    #     # Get the top-left and bottom-right coordinates
+    #     (top_left, top_right, bottom_right, bottom_left) = bbox
+    #     top_left = tuple(map(int, top_left))
+    #     bottom_right = tuple(map(int, bottom_right))
+
+
     for i in results:
         coord = i[0]
         mean_x = np.mean([x[0] for x in coord])
         mean_y = np.mean([y[1] for y in coord])
-        dict_res[(mean_x,mean_y)] = i
+        dict_res[(mean_x, mean_y)] = i
 
     dict_res = sorted(dict_res.items(), key= lambda x: x[0][1])
     return dict_res
 
 
-def text_finding(image,reader,manga_lang,threshold_diff):
+def text_finding(
+    image: bytes,
+    reader: easyocr.Reader,
+    manga_lang: str,
+    threshold_diff: int
+):
     
+    ## HERE
+    ## need to know this type to go on
     results = reader.readtext(image, detail=1)
 
     iter_list = coord_list(results)
@@ -138,6 +175,8 @@ def split_text(text, n_lines):
 
 def deepL_translate(blocks, source_l = "ES", target_l = "EN-GB"):
 
+    deepl_client = deepl.DeepLClient(DEEPL_API) #to move below? ## yes
+
     trad_block = []
 
     for idx, box in enumerate(blocks):
@@ -208,36 +247,52 @@ def ffont_path(preferred_font="DejaVuSans.ttf"):
 
 
 def main():
-    # ask in the command prompt mangapark url and language
 
-    # Comic Settings
-    manga_lang = 'es' # original language of the comic, check deepL/easyocr library for supported languages
+    ## to be params in the future
+    manga_lang = 'es'
     _url = "https://mangapark.net/title/301153-es_419-hadacamera/9280970-vol-6-ch-50"
     thres = 35 # pixel difference between mean x and y axis of previous text box to following text box to be considered as part of the same sentence.
-
-    # Folder
-    root_folder = "output"
     comic_name = "hadacamera"
     chapter_name = comic_name+'-'+_url[-7::]
 
-    if not os.path.isdir(f"{root_folder}/{comic_name}"):
-        os.mkdir(f"{root_folder}/{comic_name}")
-    
-    # Get List
-    img_list = get_images(_url)
+    ## ==== Actual code starts here ====================================
 
-    reader = easyocr.Reader([manga_lang.lower(),'en'],
-                            detector='DB',
-                            gpu=torch.cuda.is_available())  # 'es' = Spanish
+    # if not os.path.isdir(f"{root_folder}/{comic_name}"):
+    #     os.mkdir(f"{root_folder}/{comic_name}")
+    root_folder = Path(__file__).parent / "output"
+    comic_folder = root_folder / comic_name
+    comic_folder.mkdir(parents=True, exist_ok=True)
+
+    reader = easyocr.Reader(
+        [manga_lang.lower(),'en'],
+        detector='DB',
+        gpu=torch.cuda.is_available()
+    ) 
     
     chap_translated = []
 
+    ## as you just iterate them, why not a generator ?
+    img_list = get_images(_url)
     for idx, image in enumerate(img_list):
-        blocks = text_finding(image,reader=reader,manga_lang=manga_lang,threshold_diff=thres)
-        trad_block = deepL_translate(blocks, source_l = manga_lang.upper(), target_l = "EN-GB")
-        img_trans = apply_translation(image,trad_block)
+
+        blocks = text_finding(
+            image,
+            reader=reader,
+            manga_lang=manga_lang,
+            threshold_diff=thres
+        )
+
+        trad_block = deepL_translate(
+            blocks,
+            source_l = manga_lang.upper(),
+            target_l = "EN-GB"
+        )
+
+        img_trans = apply_translation(image, trad_block)
+
         chap_translated.append(img_trans)
 
+        ## maybe logging ? maybe later
         print(f'Processed the {idx} image')
 
 
@@ -247,3 +302,5 @@ def main():
 
 if __name__ == '__main__':
     main()
+
+
