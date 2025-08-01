@@ -2,3 +2,4 @@ deepL_api.py
 .jpeg
 __pycache__/
 *.tmp
+.pdf
