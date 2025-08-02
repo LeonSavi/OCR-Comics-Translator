@@ -7,14 +7,17 @@ import os
 import platform
 from pathlib import Path
 import re
-from typing import Any, Generator, LiteralString, Optional
+from typing import Any, Generator, Iterable, LiteralString, Optional, TypeVar
+
+## just for typing convenience
+T = TypeVar("T")
+type Gen[T] = Generator[T, Any, None]
 
 ## third party libraries
 from bs4 import BeautifulSoup
 import deepl
 from deepL_api import api as DEEPL_API
 import easyocr
-import numpy as np
 from PIL import Image, ImageDraw, ImageFont
 import requests
 from requests import HTTPError
@@ -29,12 +32,13 @@ from interfaces import Box, FoundText, FormattedText, read_page
 HEADERS = {
     "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
 }
+ROOT_FOLDER = Path(__file__).parent / "output"
 
 ## compile regex if expression is constant
 PATTERN_JPEG = re.compile(r'https[^"\']+?\.jpeg')
 
 
-def get_images(url: str) -> Generator[bytes, Any, None]:
+def get_images(url: str) -> Gen[bytes]:
     response = requests.get(url, headers=HEADERS) 
     ## TODO: better error handling
     try:
@@ -48,7 +52,6 @@ def get_images(url: str) -> Generator[bytes, Any, None]:
     ## be explicit in what you expect to find
     matches:list[str] = re.findall(PATTERN_JPEG, haystack)
     ## OLD:  return [requests.get(i).content for i in matches]
-    images = []
     for m in matches:
         resp = requests.get(m)
         ## TODO: better error handling
@@ -94,14 +97,13 @@ def text_finding(
     reader: easyocr.Reader,
     manga_lang: str,
     threshold_diff: int
-) -> list[FoundText]:
+) -> Gen[FoundText]:
     ## again, i'll change the function
     ## we are moving a lot around here, extra care when testing !
     iter_list = read_page(reader, image)
     ## sort boxes vertically
     ## NOTE: maybe use min/max value of the "y" coord instead of the min ?
     iter_list.sort(key=lambda x: x.box.mean().y)
-    blocks: list[FoundText] = []
     ## more pythonic but less clear
     while iter_list:
         checked = []
@@ -132,10 +134,7 @@ def text_finding(
         #clean up spanish text
         if manga_lang == "es":
             text = _cleanup_spanish(text)
-        blocks.append(
-            FoundText(coordinates, text.lower(), line_cnt)
-        )
-    return blocks
+        yield FoundText(coordinates, text.lower(), line_cnt)
 
 
 def split_text(text: str, n_lines: int) -> str:
@@ -146,7 +145,7 @@ def split_text(text: str, n_lines: int) -> str:
     ## NOTE: maybe a constant ?
     words_per_line = min(round(text_lenght/n_lines), 2)
     text = ''
-    for idx, word in enumerate(words,start=1):
+    for idx, word in enumerate(words, start=1):
         text += word
         if idx % words_per_line == 0:
             text += " \n"
@@ -157,10 +156,10 @@ def split_text(text: str, n_lines: int) -> str:
 
 
 def deepL_translate(
-    blocks: list[FoundText], 
+    blocks: Iterable[FoundText], 
     source_l: Optional[LiteralString] = "ES", 
     target_l: Optional[LiteralString] = "EN-GB"
-) -> list[FormattedText]:
+) -> Gen[FormattedText]:
     ## deepl_client.translate_text( returns the following thing
     ##
     ##  -> Union[TextResult, List[TextResult]]:
@@ -187,7 +186,6 @@ def deepL_translate(
     ## returns the above
 
     deepl_client = deepl.DeepLClient(DEEPL_API) #to move below? 
-    trad_block: list[FormattedText] = []
     for coord, text, n_lines in blocks:
         traduction = deepl_client.translate_text(
             text,
@@ -205,13 +203,10 @@ def deepL_translate(
             traduction_ = str(traduction)
 
         formatted_trad = split_text(traduction_, n_lines)
-        trad_block.append(
-            FormattedText(coord, text, formatted_trad)
-        )
-    return trad_block
+        yield FormattedText(coord, text, formatted_trad)
 
 
-def apply_translation(image_bytes: bytes, translated_text: list[FormattedText]) -> Image.Image:
+def apply_translation(image_bytes: bytes, translated_text: Iterable[FormattedText]) -> Image.Image:
     font_path = ffont_path("DejaVuSans.ttf")
     image = Image.open(BytesIO(image_bytes))
     draw = ImageDraw.Draw(image)
@@ -254,55 +249,80 @@ def ffont_path(preferred_font="DejaVuSans.ttf") -> str:
     raise Exception(f"unsupported platflorm: %s", system)
 
 
+def translate_img(
+    image: bytes, reader: easyocr.Reader, manga_lang: LiteralString, thres: int
+) -> Image.Image:
+    blocks = text_finding(
+        image,
+        reader=reader,
+        manga_lang=manga_lang,
+        threshold_diff=thres
+    )
+    trad_block = deepL_translate(
+        blocks,
+        source_l = manga_lang.upper(),
+        target_l = "EN-GB"
+    )
+    img_trans = apply_translation(image, trad_block)
+    return img_trans
+
+
+def save_chapter(location: Path, pages: list[Image.Image]):
+    with location.open("wb") as f:
+        stream = pdf_file(pages).getvalue()
+        f.write(stream)
+
+
+def translate_chapter(manga_lang: LiteralString, url: str, thres: int) -> Gen[Image.Image]:
+    ## get a translator
+    reader = easyocr.Reader(
+        [manga_lang.lower(), 'en'],
+        detector='DB',
+        gpu=torch.cuda.is_available()
+    ) 
+    ## get the images to translate
+    img_list = get_images(url)
+    ## do the translations
+    for image in img_list:
+        translation = translate_img(image, reader, manga_lang, thres)
+        yield translation
+
+
+def build_save_location(comic_name: str, chapter_name: str) -> Path:
+    comic_folder = ROOT_FOLDER / comic_name
+    comic_folder.mkdir(parents=True, exist_ok=True)
+    save_location = (comic_folder / chapter_name).with_suffix(".pdf")
+    return save_location
+
+
+def process_chapter(
+    manga_lang: LiteralString,
+    url: str,
+    comic_name: str,
+    chapter_name: str,
+    thres: int
+):
+    translated_pages = translate_chapter(manga_lang, url, thres)
+    translated_pages = list(translated_pages)
+
+    save_location = build_save_location(comic_name, chapter_name)
+    save_chapter(save_location, translated_pages)
+
 
 def main():
 
     ## to be params in the future
     manga_lang = 'es'
-    _url = "https://mangapark.net/title/301153-es_419-hadacamera/9280970-vol-6-ch-50"
-    thres = 35 # pixel difference between mean x and y axis of previous text box to following text box to be considered as part of the same sentence.
+    url = "https://mangapark.net/title/301153-es_419-hadacamera/9280970-vol-6-ch-50"
+    # pixel difference between mean x and y axis of previous text box to following text box to be considered as part of the same sentence.
+    ## feels like this should be a global const
+    thres = 35 
     comic_name = "hadacamera"
-    chapter_name = comic_name+'-'+_url[-7::]
+    chapter_name = comic_name+'-'+url[-7::]
 
-    ## ==== Actual code starts here ====================================
+    process_chapter(manga_lang, url, comic_name, chapter_name, thres)
 
-    root_folder = Path(__file__).parent / "output"
-    comic_folder = root_folder / comic_name
-    comic_folder.mkdir(parents=True, exist_ok=True)
-
-    reader = easyocr.Reader(
-        [manga_lang.lower(),'en'],
-        detector='DB',
-        gpu=torch.cuda.is_available()
-    ) 
     
-    chap_translated = []
-
-    ## as you just iterate them, why not a generator ?
-    img_list = get_images(_url)
-    for idx, image in enumerate(img_list):
-        blocks = text_finding(
-            image,
-            reader=reader,
-            manga_lang=manga_lang,
-            threshold_diff=thres
-        )
-        trad_block = deepL_translate(
-            blocks,
-            source_l = manga_lang.upper(),
-            target_l = "EN-GB"
-        )
-        img_trans = apply_translation(image, trad_block)
-        chap_translated.append(img_trans)
-        ## maybe logging ? maybe later
-        print(f'Processed the {idx} image')
-
-    ## is put it into the comic folder and not just the root folder
-    output = (comic_folder / chapter_name).with_suffix(".pdf")
-    with output.open("wb") as f:
-        stream = pdf_file(chap_translated).getvalue()
-        f.write(stream)
-
 
 if __name__ == '__main__':
     main()
