@@ -29,11 +29,12 @@ from interfaces import Box, FoundText, FormattedText, read_page
 
 
 ## constants are ALL_CAPS
+# pixel difference between mean x and y axis of previous text box to following text box to be considered as part of the same sentence.
+THRESHOLD_DIFFERENCE = 35
 HEADERS = {
     "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
 }
 ROOT_FOLDER = Path(__file__).parent / "output"
-
 ## compile regex if expression is constant
 PATTERN_JPEG = re.compile(r'https[^"\']+?\.jpeg')
 
@@ -51,7 +52,6 @@ def get_images(url: str) -> Gen[bytes]:
     haystack = soup.prettify()
     ## be explicit in what you expect to find
     matches:list[str] = re.findall(PATTERN_JPEG, haystack)
-    ## OLD:  return [requests.get(i).content for i in matches]
     for m in matches:
         resp = requests.get(m)
         ## TODO: better error handling
@@ -67,20 +67,20 @@ def get_images(url: str) -> Gen[bytes]:
         yield img
 
 
-def get_box(coord1: Box, coord2: Optional[Box]=None) -> Box:
+def _surrounding_box(coord1: Box, coord2: Optional[Box]=None) -> Box:
     ## NOTE: there could be a better way to do this by looking into what "readtext" returns
     ## still, it's clear and quick as we compare maximum 8 numbers every time
+
+    # if there is a single box, the sourrounding box it's the provided one itself
+    if coord2 is None:
+        return coord1
     points = list(coord1)
-    if coord2 is not None:
-        points.extend(coord2)
+    points.extend(coord2)
     return Box.from_points(points)
 
 
 def _handle_newline_text(text: str) -> str:
-    if text[-1] == "-":
-        return text[:-1] 
-    else:
-        return text
+    return text.removesuffix("-")
 
 
 def _cleanup_spanish(text: str) -> str:
@@ -92,14 +92,8 @@ def _cleanup_spanish(text: str) -> str:
         return text
 
 
-def text_finding(
-    image: bytes, 
-    reader: easyocr.Reader,
-    manga_lang: str,
-    threshold_diff: int
-) -> Gen[FoundText]:
-    ## again, i'll change the function
-    ## we are moving a lot around here, extra care when testing !
+def find_text_in_image(image: bytes, reader: easyocr.Reader, manga_lang: str) -> Gen[FoundText]:
+    ## NOTE: we are moving a lot around here, extra care when testing !
     iter_list = read_page(reader, image)
     ## sort boxes vertically
     ## NOTE: maybe use min/max value of the "y" coord instead of the min ?
@@ -113,18 +107,17 @@ def text_finding(
         ## this is the first iteration
         first = next(it)
         prev_low_mean_bbox = first.box.mean()
-        coordinates = get_box(first.box)
+        coordinates = _surrounding_box(first.box)
         text = _handle_newline_text(first.text)
         line_cnt += 1
         checked.append(first)
-        iter_list.remove(first)
         ## and these are all the other iterations
         for item in it:
             bbox = item.box
             mean_bbox = bbox.mean()
             curr_text = item.text
-            if prev_low_mean_bbox.is_close_to(mean_bbox, threshold_diff):
-                coordinates = get_box(coordinates, bbox)
+            if prev_low_mean_bbox.is_close_to(mean_bbox, THRESHOLD_DIFFERENCE):
+                coordinates = _surrounding_box(coordinates, bbox)
                 text = _handle_newline_text(text) + curr_text
                 prev_low_mean_bbox = mean_bbox
                 checked.append(item)
@@ -154,37 +147,14 @@ def split_text(text: str, n_lines: int) -> str:
     return text
 
 
-
 def deepL_translate(
     blocks: Iterable[FoundText], 
     source_l: Optional[LiteralString] = "ES", 
     target_l: Optional[LiteralString] = "EN-GB"
 ) -> Gen[FormattedText]:
     ## deepl_client.translate_text( returns the following thing
-    ##
     ##  -> Union[TextResult, List[TextResult]]:
-    ##
     ## https://github.com/DeepLcom/deepl-python/blob/main/deepl/api_data.py#L12
-    ##
-    ## class TextResult:
-    ##     """Holds the result of a text translation request."""
-    ##
-    ##     def __init__(
-    ##         self,
-    ##         text: str,
-    ##         detected_source_lang: str,
-    ##         billed_characters: int,
-    ##         model_type_used: Optional[str] = None,
-    ##     ):
-    ##         self.text = text
-    ##         self.detected_source_lang = detected_source_lang
-    ##         self.billed_characters = billed_characters
-    ##         self.model_type_used = model_type_used
-    ##
-    ##     def __str__(self):
-    ##         return self.text
-    ## returns the above
-
     deepl_client = deepl.DeepLClient(DEEPL_API) #to move below? 
     for coord, text, n_lines in blocks:
         traduction = deepl_client.translate_text(
@@ -196,12 +166,10 @@ def deepL_translate(
         ## "traduction" is not really a str but it's treated as such.
         ## so I suggest an explicit conversion, also to handle the fact that
         ## it may return list OR str
-
         if isinstance(traduction, list):
             traduction_ = " ".join(map(str, traduction))
         else:
             traduction_ = str(traduction)
-
         formatted_trad = split_text(traduction_, n_lines)
         yield FormattedText(coord, text, formatted_trad)
 
@@ -212,10 +180,8 @@ def apply_translation(image_bytes: bytes, translated_text: Iterable[FormattedTex
     draw = ImageDraw.Draw(image)
     font_txt = ImageFont.truetype(font_path, 13)
     for coordinates, _, formatted in translated_text:
-
         ## IMPORTANT
         ## TODO: coordinates is most surely wrong here now
-
         draw.rectangle(coordinates, fill="white")
         draw.multiline_text(
             xy=coordinates[0],
@@ -225,16 +191,16 @@ def apply_translation(image_bytes: bytes, translated_text: Iterable[FormattedTex
             font=font_txt ,
             align="center"
         )
-
     return image
 
 
-def pdf_file(pages: list[Image.Image]) -> BytesIO:
+def pdf_bytes(pages: list[Image.Image]) -> BytesIO:
+    ## is this still a list of images ?
     images = [i.convert('RGB') for i in pages]
-    pdf_bytes = BytesIO()
-    images[0].save(pdf_bytes, format='PDF', save_all=True, append_images=images[1:])
-    pdf_bytes.seek(0)
-    return pdf_bytes
+    _pdf_bytes = BytesIO()
+    images[0].save(_pdf_bytes, format='PDF', save_all=True, append_images=images[1:])
+    _pdf_bytes.seek(0)
+    return _pdf_bytes
 
 
 def ffont_path(preferred_font="DejaVuSans.ttf") -> str:
@@ -249,43 +215,30 @@ def ffont_path(preferred_font="DejaVuSans.ttf") -> str:
     raise Exception(f"unsupported platflorm: %s", system)
 
 
-def translate_img(
-    image: bytes, reader: easyocr.Reader, manga_lang: LiteralString, thres: int
-) -> Image.Image:
-    blocks = text_finding(
-        image,
-        reader=reader,
-        manga_lang=manga_lang,
-        threshold_diff=thres
-    )
+def translate_img(image: bytes, reader: easyocr.Reader, manga_lang: LiteralString) -> Image.Image:
+    blocks = find_text_in_image(image, reader, manga_lang)
     trad_block = deepL_translate(
         blocks,
         source_l = manga_lang.upper(),
         target_l = "EN-GB"
     )
-    img_trans = apply_translation(image, trad_block)
-    return img_trans
+    return apply_translation(image, trad_block)
 
 
 def save_chapter(location: Path, pages: list[Image.Image]):
     with location.open("wb") as f:
-        stream = pdf_file(pages).getvalue()
+        stream = pdf_bytes(pages).getvalue()
         f.write(stream)
 
 
-def translate_chapter(manga_lang: LiteralString, url: str, thres: int) -> Gen[Image.Image]:
-    ## get a translator
+def translate_chapter(manga_lang: LiteralString, url: str) -> Gen[Image.Image]:
     reader = easyocr.Reader(
         [manga_lang.lower(), 'en'],
         detector='DB',
         gpu=torch.cuda.is_available()
     ) 
-    ## get the images to translate
-    img_list = get_images(url)
-    ## do the translations
-    for image in img_list:
-        translation = translate_img(image, reader, manga_lang, thres)
-        yield translation
+    for image in get_images(url):
+        yield translate_img(image, reader, manga_lang)
 
 
 def build_save_location(comic_name: str, chapter_name: str) -> Path:
@@ -295,36 +248,22 @@ def build_save_location(comic_name: str, chapter_name: str) -> Path:
     return save_location
 
 
-def process_chapter(
-    manga_lang: LiteralString,
-    url: str,
-    comic_name: str,
-    chapter_name: str,
-    thres: int
-):
-    translated_pages = translate_chapter(manga_lang, url, thres)
-    translated_pages = list(translated_pages)
-
+def process_chapter(manga_lang: LiteralString, url: str, comic_name: str, chapter_name: str):
+    translated_pages = list(translate_chapter(manga_lang, url))
     save_location = build_save_location(comic_name, chapter_name)
     save_chapter(save_location, translated_pages)
 
 
 def main():
-
-    ## to be params in the future
+    ## get inputs from somewhere
     manga_lang = 'es'
     url = "https://mangapark.net/title/301153-es_419-hadacamera/9280970-vol-6-ch-50"
-    # pixel difference between mean x and y axis of previous text box to following text box to be considered as part of the same sentence.
-    ## feels like this should be a global const
-    thres = 35 
     comic_name = "hadacamera"
     chapter_name = comic_name+'-'+url[-7::]
+    ## use them
+    process_chapter(manga_lang, url, comic_name, chapter_name)
 
-    process_chapter(manga_lang, url, comic_name, chapter_name, thres)
-
-    
 
 if __name__ == '__main__':
     main()
-
 

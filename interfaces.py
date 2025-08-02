@@ -17,7 +17,7 @@ class Point(NamedTuple):
     x: float
     y: float
 
-    def is_close_to(self, other: Self, threshold: float) -> bool:
+    def is_close_to(self, other: Self, threshold: int) -> bool:
         cond1 = abs(self.x - other.x)
         cond2 = abs(self.y - other.y)
         return (cond1 <= threshold) and (cond2 <= threshold)
@@ -43,10 +43,8 @@ class Box(NamedTuple):
         return Point(mean_x, mean_y)
 
     @classmethod
-    def from_points(cls, points: Iterable[Point]) -> Self:
-        """
-        from a set of points, get the box that surrounds them all
-        """
+    def from_points(cls, points: list[Point]) -> Self:
+        """ from a set of points, get the box that surrounds them all """
         min_x = min(p.x for p in points)
         min_y = min(p.y for p in points)
         max_x = max(p.x for p in points)
