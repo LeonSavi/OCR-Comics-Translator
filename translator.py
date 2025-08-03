@@ -2,13 +2,7 @@
 from io import BytesIO
 import os
 import platform
-from typing import (
-    Any, 
-    Iterable,
-    LiteralString,
-    NamedTuple,
-    Optional,
-)
+from typing import Any, Iterable, LiteralString, NamedTuple, Optional
 
 ## third party libraries
 from deepl import DeepLClient

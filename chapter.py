@@ -2,11 +2,7 @@
 from io import BytesIO
 from pathlib import Path
 import re
-from typing import (
-    LiteralString,
-    NamedTuple,
-    Optional,
-)
+from typing import LiteralString, NamedTuple
 
 from bs4 import BeautifulSoup
 from deepl import DeepLClient

@@ -7,13 +7,7 @@ not-so-well documented library results
 """
 
 import statistics
-from typing import (
-    Any,
-    Generator,
-    NamedTuple, 
-    Self,
-    TypeVar
-)
+from typing import Any, Generator, NamedTuple, Self, TypeVar
 
 
 T = TypeVar("T")
