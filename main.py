@@ -8,7 +8,7 @@
 from deepl import DeepLClient
 from deepL_api import api as DEEPL_API
 
-from chapter import process_chapter
+from scripts.chapter import process_chapter
 
 
 def main():

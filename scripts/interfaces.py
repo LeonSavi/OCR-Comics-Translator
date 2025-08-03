@@ -55,10 +55,12 @@ class Box(NamedTuple):
     @classmethod
     def from_points(cls, points: list[Point]) -> Self:
         """ from a set of points, get the box that surrounds them all """
-        min_x = min(p.x for p in points)
-        min_y = min(p.y for p in points)
-        max_x = max(p.x for p in points)
-        max_y = max(p.y for p in points)
+        
+        min_x = min(p[0] for p in points)
+        min_y = min(p[1] for p in points)
+        max_x = max(p[0] for p in points)
+        max_y = max(p[1] for p in points)
+
         return cls.from_minmax(min_x, min_y, max_x, max_y)
 
     @classmethod
@@ -69,6 +71,7 @@ class Box(NamedTuple):
             Point(min_x, max_y),
             Point(max_x, max_y)
         )
+        
 
 
 class ReadText(NamedTuple):

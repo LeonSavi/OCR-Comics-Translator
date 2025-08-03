@@ -16,7 +16,7 @@ from deepl import DeepLClient
 import easyocr
 from PIL import Image, ImageDraw, ImageFont
 
-from interfaces import Box, FoundText, FormattedText, Gen, ReadText
+from scripts.interfaces import Box, FoundText, FormattedText, Gen, ReadText
 
 
 # pixel difference between mean x and y axis of previous text box to following text box to be considered as part of the same sentence.
@@ -97,9 +97,8 @@ class PageTranslator(NamedTuple):
         draw = ImageDraw.Draw(image)
         font_txt = ImageFont.truetype(font_path, 13)
         for coordinates, _, formatted in translated_text:
-            ## IMPORTANT
-            ## TODO: coordinates is most surely wrong here now
-            draw.rectangle(coordinates, fill="white")
+            x,y=zip(*(list(coordinates)))
+            draw.rectangle([min(x),min(y),max(x),max(y)], fill="white")
             draw.multiline_text(
                 xy=coordinates[0],
                 # anchor='mm',
@@ -132,6 +131,7 @@ def deepL_translate(
             source_lang=source_l,
             target_lang=target_l
         )
+        print(coord, text, n_lines,traduction)
         formatted_trad = split_text(strigify(traduction), n_lines)
         yield FormattedText(coord, text, formatted_trad)
 
@@ -143,7 +143,7 @@ def ffont_path(preferred_font="DejaVuSans.ttf") -> str:
         font_path = os.path.join(font_dir, preferred_font)
         return font_path
     elif system == "Linux":
-        font_path = "/usr/share/fonts/truetype/dejavu"
+        font_path = f"/usr/share/fonts/truetype/dejavu/{preferred_font}"
         return font_path
     raise Exception(f"unsupported platflorm: %s", system)
 

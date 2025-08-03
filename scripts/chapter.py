@@ -3,10 +3,10 @@ from io import BytesIO
 from pathlib import Path
 import re
 from typing import (
-    LiteralString,
     NamedTuple,
     Optional,
 )
+from typing_extensions import LiteralString
 
 from bs4 import BeautifulSoup
 from deepl import DeepLClient
