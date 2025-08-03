@@ -110,7 +110,7 @@ def text_finding(image,reader,manga_lang,threshold_diff):
         if manga_lang == "es":
             cond = (text[0]=='i') and (text[1]!=' ') #it is a '!'
             if cond:
-                text[0]='¡' # reverse exlamation mark
+                text=text[1:]
         
         blocks.append((coordinates, text.lower(), line_cnt))
     
