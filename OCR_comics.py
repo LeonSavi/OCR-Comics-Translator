@@ -67,7 +67,7 @@ def get_images(url: str) -> Gen[bytes]:
         yield img
 
 
-def _surrounding_box(coord1: Box, coord2: Optional[Box]=None) -> Box:
+def surrounding_box(coord1: Box, coord2: Optional[Box]=None) -> Box:
     ## NOTE: there could be a better way to do this by looking into what "readtext" returns
     ## still, it's clear and quick as we compare maximum 8 numbers every time
 
@@ -79,11 +79,11 @@ def _surrounding_box(coord1: Box, coord2: Optional[Box]=None) -> Box:
     return Box.from_points(points)
 
 
-def _handle_newline_text(text: str) -> str:
+def handle_newline_text(text: str) -> str:
     return text.removesuffix("-")
 
 
-def _cleanup_spanish(text: str) -> str:
+def cleanup_spanish(text: str) -> str:
     """assumes spanish text"""
     is_bang = (text[0]=='i') and (text[1]!=' ') # it is a '!'
     if is_bang:
@@ -97,7 +97,7 @@ def find_text_in_image(image: bytes, reader: easyocr.Reader, manga_lang: str) ->
     iter_list = read_page(reader, image)
     ## sort boxes vertically
     ## NOTE: maybe use min/max value of the "y" coord instead of the min ?
-    iter_list.sort(key=lambda x: x.box.mean().y)
+    iter_list.sort(key=lambda x: x.box.center().y)
     ## more pythonic but less clear
     while iter_list:
         checked = []
@@ -106,19 +106,19 @@ def find_text_in_image(image: bytes, reader: easyocr.Reader, manga_lang: str) ->
         it = iter(iter_list)
         ## this is the first iteration
         first = next(it)
-        prev_low_mean_bbox = first.box.mean()
-        coordinates = _surrounding_box(first.box)
-        text = _handle_newline_text(first.text)
+        prev_low_mean_bbox = first.box.center()
+        coordinates = surrounding_box(first.box)
+        text = handle_newline_text(first.text)
         line_cnt += 1
         checked.append(first)
         ## and these are all the other iterations
         for item in it:
             bbox = item.box
-            mean_bbox = bbox.mean()
+            mean_bbox = bbox.center()
             curr_text = item.text
             if prev_low_mean_bbox.is_close_to(mean_bbox, THRESHOLD_DIFFERENCE):
-                coordinates = _surrounding_box(coordinates, bbox)
-                text = _handle_newline_text(text) + curr_text
+                coordinates = surrounding_box(coordinates, bbox)
+                text = handle_newline_text(text) + curr_text
                 prev_low_mean_bbox = mean_bbox
                 checked.append(item)
                 line_cnt += 1
@@ -126,7 +126,7 @@ def find_text_in_image(image: bytes, reader: easyocr.Reader, manga_lang: str) ->
             iter_list.remove(item)
         #clean up spanish text
         if manga_lang == "es":
-            text = _cleanup_spanish(text)
+            text = cleanup_spanish(text)
         yield FoundText(coordinates, text.lower(), line_cnt)
 
 

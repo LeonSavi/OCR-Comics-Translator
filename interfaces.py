@@ -7,9 +7,17 @@ not-so-well documented library results
 """
 
 import statistics
-from typing import Iterable, NamedTuple, Self
+from typing import (
+    Any,
+    Generator,
+    NamedTuple, 
+    Self,
+    TypeVar
+)
 
-import easyocr
+
+T = TypeVar("T")
+type Gen[T] = Generator[T, Any, None]
 
 
 class Point(NamedTuple):
@@ -25,16 +33,16 @@ class Point(NamedTuple):
 
 class Box(NamedTuple):
     """basic bounding box"""
-    p1: Point
-    p2: Point
-    p3: Point
-    p4: Point
+    bottom_left: Point
+    bottom_rigth: Point
+    top_left: Point
+    top_right: Point
 
     @classmethod
     def from_tuple(cls, t: tuple[Point, Point, Point, Point]) -> Self:
         return cls(*t)
 
-    def mean(self) -> Point:
+    def center(self) -> Point:
         """returns the point in the middle of the box"""
         # NOTE: maybe rename to "middle ?"
         t = tuple(self)
@@ -72,17 +80,15 @@ class ReadText(NamedTuple):
     text: str
     confidence: float
 
-
-def read_page(reader: easyocr.Reader, image: bytes) -> list[ReadText]:
-    """ this only adds type hints and freezes the "detail" param """
-    # results = [
-    #     (
-    #         [[700, 288], [748, 288], [748, 346], [700, 346]], # 4 corners of the box, in a list
-    #         '2',
-    #         0.35551235377397816),
-    #     ... # you get a list of these
-    # ]
-    return reader.readtext(image, detail=1)
+    @classmethod
+    def from_easyocr_readtext(cls, ocr_result: tuple) -> Self:
+        """
+        ocr_result appears to have the points sorted in counterclockwise
+        order, but it's not sure so we rely on our constructor for 
+        a deterministic order.
+        """
+        points, text, confidence = ocr_result
+        return cls(Box.from_points(points), text, confidence)
 
 
 class FoundText(NamedTuple):
@@ -95,7 +101,4 @@ class FormattedText(NamedTuple):
     coordinates: Box
     text: str
     formatted: str
-
-
-
 
