@@ -49,10 +49,13 @@ class PageTranslator(NamedTuple):
         #     ... # you get a list of these
         # ]
         # need this step to sort the received points in the correct order
-        return list(map(
+
+        ret = list(map(
             ReadText.from_easyocr_readtext,
             self.reader.readtext(self.image, detail=1)
         ))
+
+        return ret
 
     def find_text_in_image(self) -> Gen[FoundText]:
         ## NOTE: we are moving a lot around here, extra care when testing !
@@ -80,7 +83,7 @@ class PageTranslator(NamedTuple):
                 curr_text = item.text
                 if prev_low_mean_bbox.is_close_to(mean_bbox, THRESHOLD_DIFFERENCE):
                     coordinates = surrounding_box(coordinates, bbox)
-                    text = handle_newline_text(text) + curr_text
+                    text = handle_newline_text(text, curr_text)
                     prev_low_mean_bbox = mean_bbox
                     checked.append(item)
                     line_cnt += 1
@@ -89,6 +92,7 @@ class PageTranslator(NamedTuple):
             #clean up spanish text
             if self.manga_lang == "es":
                 text = cleanup_spanish(text)
+
             yield FoundText(coordinates, text.lower(), line_cnt)
 
     def apply_translation(self, translated_text: Iterable[FormattedText]) -> Image.Image:
@@ -96,17 +100,23 @@ class PageTranslator(NamedTuple):
         image = Image.open(BytesIO(self.image))
         draw = ImageDraw.Draw(image)
         font_txt = ImageFont.truetype(font_path, 13)
+
+        translated_text = list(translated_text)
+
         for coordinates, _, formatted in translated_text:
             x,y=zip(*(list(coordinates)))
-            draw.rectangle([min(x),min(y),max(x),max(y)], fill="white")
+            min_x,min_y = min(x),min(y)
+            max_x,max_y = max(x),max(y)
+            draw.rectangle([min_x,min_y,max_x,max_y], fill="white")
             draw.multiline_text(
-                xy=coordinates[0],
+                xy=(min_x,max_y), # top_left does not give the right output
                 # anchor='mm',
                 text=formatted,
                 fill ="black",
                 font=font_txt ,
                 align="center"
             )
+
         return image
 
 
@@ -115,25 +125,29 @@ def deepL_translate(
     blocks: Iterable[FoundText], 
     source_l: Optional[LiteralString] = "ES", 
     target_l: Optional[LiteralString] = "EN-GB"
-) -> Gen[FormattedText]:
-    ## deepl_client.translate_text( returns the following thing
-    ##  -> Union[TextResult, List[TextResult]]:
-    ## https://github.com/DeepLcom/deepl-python/blob/main/deepl/api_data.py#L12
+    ) -> Gen[FormattedText]:
+        ## deepl_client.translate_text( returns the following thing
+        ##  -> Union[TextResult, List[TextResult]]:
+        ## https://github.com/DeepLcom/deepl-python/blob/main/deepl/api_data.py#L12
 
+        ## One API Call
+    blocks = list(blocks)
+    sentences = [text for _, text, _ in blocks]
 
-    # to move below?  
-    ## we are actually calling the API once per page
-    ## having a single client live for the whole 
-    ## chapter makes more sense, 
-    for coord, text, n_lines in blocks:
-        traduction = deepl_client.translate_text(
-            text,
+    try:   
+        traductions = deepl_client.translate_text(
+            sentences,
             source_lang=source_l,
             target_lang=target_l
         )
-        print(coord, text, n_lines,traduction)
-        formatted_trad = split_text(strigify(traduction), n_lines)
-        yield FormattedText(coord, text, formatted_trad)
+
+        for (coord, text, n_lines), translated in zip(blocks, traductions):
+            formatted_trad = split_text(strigify(translated.text), n_lines)
+            yield FormattedText(coord, text, formatted_trad)
+
+    except:
+        db = Box.defaultBox()
+        yield FormattedText(db, '', '')
 
 
 def ffont_path(preferred_font="DejaVuSans.ttf") -> str:
@@ -145,7 +159,7 @@ def ffont_path(preferred_font="DejaVuSans.ttf") -> str:
     elif system == "Linux":
         font_path = f"/usr/share/fonts/truetype/dejavu/{preferred_font}"
         return font_path
-    raise Exception(f"unsupported platflorm: %s", system)
+    raise Exception(f"Unsupported platflorm: %s", system)
 
 
 def strigify(thing: list[Any] | Any) -> str:
@@ -189,8 +203,12 @@ def surrounding_box(coord1: Box, coord2: Optional[Box]=None) -> Box:
     return Box.from_points(points)
 
 
-def handle_newline_text(text: str) -> str:
-    return text.removesuffix("-")
+def handle_newline_text(text1:str, text2:str = '') -> str:
+
+    if (text1[-1] == '-'): 
+        return text1.removesuffix("-") + text2
+    else:
+        return text1 + ' ' + text2 #add blank if it s not a continuation 
 
 
 def cleanup_spanish(text: str) -> str:

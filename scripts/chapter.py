@@ -17,13 +17,13 @@ import requests
 from requests import HTTPError
 import torch
 
-from interfaces import Gen
-from translator import PageTranslator
+from scripts.interfaces import Gen
+from scripts.translator import PageTranslator
 
 HEADERS = {
     "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
 }
-ROOT_FOLDER = Path(__file__).parent / "output"
+ROOT_FOLDER = Path(__file__).parent.parent / "output"
 PATTERN_JPEG = re.compile(r'https[^"\']+?\.jpeg')
 
 
