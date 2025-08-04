@@ -25,7 +25,7 @@ import torch
 
 ## other project files
 ## (this time is mostly for type hints and some helpers)
-from interfaces import Box, FoundText, FormattedText, read_page
+from interfaces import Box, FoundText, FormattedText, ReadText
 
 
 ## constants are ALL_CAPS
@@ -94,7 +94,10 @@ def cleanup_spanish(text: str) -> str:
 
 def find_text_in_image(image: bytes, reader: easyocr.Reader, manga_lang: str) -> Gen[FoundText]:
     ## NOTE: we are moving a lot around here, extra care when testing !
-    iter_list = read_page(reader, image)
+    iter_list = list(map(
+        ReadText.from_easyocr_readtext,
+        reader.readtext(image, detail=1)
+    ))
     ## sort boxes vertically
     ## NOTE: maybe use min/max value of the "y" coord instead of the min ?
     iter_list.sort(key=lambda x: x.box.center().y)
