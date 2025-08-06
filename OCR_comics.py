@@ -7,11 +7,8 @@ import os
 import platform
 from pathlib import Path
 import re
-from typing import Any, Generator, Iterable, LiteralString, Optional, TypeVar
+from typing import Iterable, LiteralString, Optional
 
-## just for typing convenience
-T = TypeVar("T")
-type Gen[T] = Generator[T, Any, None]
 
 ## third party libraries
 from bs4 import BeautifulSoup
@@ -25,7 +22,7 @@ import torch
 
 ## other project files
 ## (this time is mostly for type hints and some helpers)
-from interfaces import Box, FoundText, FormattedText, ReadText
+from interfaces import Box, Chapter, FoundText, FormattedText, Gen, ReadText
 
 
 ## constants are ALL_CAPS
@@ -67,18 +64,6 @@ def get_images(url: str) -> Gen[bytes]:
         yield img
 
 
-def surrounding_box(coord1: Box, coord2: Optional[Box]=None) -> Box:
-    ## NOTE: there could be a better way to do this by looking into what "readtext" returns
-    ## still, it's clear and quick as we compare maximum 8 numbers every time
-
-    # if there is a single box, the sourrounding box it's the provided one itself
-    if coord2 is None:
-        return coord1
-    points = list(coord1)
-    points.extend(coord2)
-    return Box.from_points(points)
-
-
 def handle_newline_text(text: str) -> str:
     return text.removesuffix("-")
 
@@ -110,7 +95,7 @@ def find_text_in_image(image: bytes, reader: easyocr.Reader, manga_lang: str) ->
         ## this is the first iteration
         first = next(it)
         prev_low_mean_bbox = first.box.center()
-        coordinates = surrounding_box(first.box)
+        coordinates = Box.around(list(first.box))
         text = handle_newline_text(first.text)
         line_cnt += 1
         checked.append(first)
@@ -120,7 +105,7 @@ def find_text_in_image(image: bytes, reader: easyocr.Reader, manga_lang: str) ->
             mean_bbox = bbox.center()
             curr_text = item.text
             if prev_low_mean_bbox.is_close_to(mean_bbox, THRESHOLD_DIFFERENCE):
-                coordinates = surrounding_box(coordinates, bbox)
+                coordinates = Box.around(list(coordinates) + list(bbox))
                 text = handle_newline_text(text) + curr_text
                 prev_low_mean_bbox = mean_bbox
                 checked.append(item)
@@ -140,25 +125,23 @@ def split_text(text: str, n_lines: int) -> str:
         return text
     ## NOTE: maybe a constant ?
     words_per_line = min(round(text_lenght/n_lines), 2)
-    text = ''
+    text = ""
     for idx, word in enumerate(words, start=1):
-        text += word
-        if idx % words_per_line == 0:
-            text += " \n"
-        else: 
-            text += " "
+        endl = " \n" if idx % words_per_line == 0 else " "
+        text += word + endl
     return text
 
 
 def deepL_translate(
     blocks: Iterable[FoundText], 
     source_l: Optional[LiteralString] = "ES", 
-    target_l: Optional[LiteralString] = "EN-GB"
+    target_l: Optional[LiteralString] = "EN-GB",
+    deeplc: Optional[deepl.DeepLClient]=None  
 ) -> Gen[FormattedText]:
     ## deepl_client.translate_text( returns the following thing
     ##  -> Union[TextResult, List[TextResult]]:
     ## https://github.com/DeepLcom/deepl-python/blob/main/deepl/api_data.py#L12
-    deepl_client = deepl.DeepLClient(DEEPL_API) #to move below? 
+    deepl_client = deeplc or deepl.DeepLClient(DEEPL_API)
     for coord, text, n_lines in blocks:
         traduction = deepl_client.translate_text(
             text,
@@ -169,12 +152,15 @@ def deepL_translate(
         ## "traduction" is not really a str but it's treated as such.
         ## so I suggest an explicit conversion, also to handle the fact that
         ## it may return list OR str
-        if isinstance(traduction, list):
-            traduction_ = " ".join(map(str, traduction))
-        else:
-            traduction_ = str(traduction)
-        formatted_trad = split_text(traduction_, n_lines)
+        formatted_trad = split_text(_stringify(traduction), n_lines)
         yield FormattedText(coord, text, formatted_trad)
+
+
+def _stringify(thing) -> str:
+    if isinstance(thing, list):
+        return " ".join(map(str, thing))
+    else:
+        return str(thing)
 
 
 def apply_translation(image_bytes: bytes, translated_text: Iterable[FormattedText]) -> Image.Image:
@@ -206,7 +192,7 @@ def pdf_bytes(pages: list[Image.Image]) -> BytesIO:
     return _pdf_bytes
 
 
-def ffont_path(preferred_font="DejaVuSans.ttf") -> str:
+def ffont_path(preferred_font: str="DejaVuSans.ttf") -> str:
     system = platform.system()
     if system == "Windows":
         font_dir = os.path.join(os.environ['WINDIR'], "Fonts")
@@ -218,43 +204,50 @@ def ffont_path(preferred_font="DejaVuSans.ttf") -> str:
     raise Exception(f"unsupported platflorm: %s", system)
 
 
-def translate_img(image: bytes, reader: easyocr.Reader, manga_lang: LiteralString) -> Image.Image:
+def translate_img(
+    image: bytes,
+    reader: easyocr.Reader,
+    manga_lang: LiteralString,
+    deeplc: Optional[deepl.DeepLClient]=None  
+) -> Image.Image:
     blocks = find_text_in_image(image, reader, manga_lang)
     trad_block = deepL_translate(
         blocks,
         source_l = manga_lang.upper(),
-        target_l = "EN-GB"
+        target_l = "EN-GB",
+        deeplc = deeplc
     )
     return apply_translation(image, trad_block)
 
 
-def save_chapter(location: Path, pages: list[Image.Image]):
-    with location.open("wb") as f:
-        stream = pdf_bytes(pages).getvalue()
-        f.write(stream)
-
-
-def translate_chapter(manga_lang: LiteralString, url: str) -> Gen[Image.Image]:
-    reader = easyocr.Reader(
-        [manga_lang.lower(), 'en'],
+def translate_chapter(
+    c: Chapter,
+    reader: Optional[easyocr.Reader]=None,
+    deeplc: Optional[deepl.DeepLClient]=None  
+) -> Gen[Image.Image]:
+    _reader = reader or easyocr.Reader(
+        [c.manga_lang.lower(), 'en'],
         detector='DB',
         gpu=torch.cuda.is_available()
     ) 
-    for image in get_images(url):
-        yield translate_img(image, reader, manga_lang)
+    for image in get_images(c.url):
+        yield translate_img(image, _reader, c.manga_lang, deeplc)
 
 
-def build_save_location(comic_name: str, chapter_name: str) -> Path:
-    comic_folder = ROOT_FOLDER / comic_name
+def save(c: Chapter, translated_pages: list[Image.Image]):
+    comic_folder = ROOT_FOLDER / c.comic_name
     comic_folder.mkdir(parents=True, exist_ok=True)
-    save_location = (comic_folder / chapter_name).with_suffix(".pdf")
-    return save_location
+    save_location = (comic_folder / c.chapter_name).with_suffix(".pdf")
+    save_location.write_bytes(pdf_bytes(translated_pages).getvalue())
 
 
-def process_chapter(manga_lang: LiteralString, url: str, comic_name: str, chapter_name: str):
-    translated_pages = list(translate_chapter(manga_lang, url))
-    save_location = build_save_location(comic_name, chapter_name)
-    save_chapter(save_location, translated_pages)
+def process_chapter(
+    c: Chapter,
+    reader: Optional[easyocr.Reader]=None,
+    deeplc: Optional[deepl.DeepLClient]=None  
+):
+    translated_pages = list(translate_chapter(c, reader, deeplc))
+    save(c, translated_pages)
 
 
 def main():
@@ -264,7 +257,8 @@ def main():
     comic_name = "hadacamera"
     chapter_name = comic_name+'-'+url[-7::]
     ## use them
-    process_chapter(manga_lang, url, comic_name, chapter_name)
+    c = Chapter(manga_lang, url, comic_name, chapter_name)
+    process_chapter(c)
 
 
 if __name__ == '__main__':

@@ -179,7 +179,7 @@ def surrounding_box(coord1: Box, coord2: Optional[Box]=None) -> Box:
         return coord1
     points = list(coord1)
     points.extend(coord2)
-    return Box.from_points(points)
+    return Box.around(points)
 
 
 def handle_newline_text(text: str) -> str:

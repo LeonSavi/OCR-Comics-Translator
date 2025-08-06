@@ -42,7 +42,7 @@ class Chapter(NamedTuple):
             yield pt.translate()
 
     def process(self):
-        self.save_chapter(list(self.translate()))
+        self.save(list(self.translate()))
 
     def build_save_location(self) -> Path:
         comic_folder = ROOT_FOLDER / self.comic
@@ -50,7 +50,7 @@ class Chapter(NamedTuple):
         save_location = (comic_folder / self.name).with_suffix(".pdf")
         return save_location
 
-    def save_chapter(self, pages: list[Image.Image]):
+    def save(self, pages: list[Image.Image]):
         with self.build_save_location().open("wb") as f:
             stream = self.pdf_bytes(pages).getvalue()
             f.write(stream)

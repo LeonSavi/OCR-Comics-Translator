@@ -7,7 +7,7 @@ not-so-well documented library results
 """
 
 import statistics
-from typing import Any, Generator, NamedTuple, Self, TypeVar
+from typing import Any, Generator, LiteralString, NamedTuple, Self, TypeVar
 
 
 T = TypeVar("T")
@@ -38,14 +38,12 @@ class Box(NamedTuple):
 
     def center(self) -> Point:
         """returns the point in the middle of the box"""
-        # NOTE: maybe rename to "middle ?"
-        t = tuple(self)
-        mean_x = statistics.mean(p.x for p in t)
-        mean_y = statistics.mean(p.y for p in t)
+        mean_x = statistics.mean(p.x for p in self)
+        mean_y = statistics.mean(p.y for p in self)
         return Point(mean_x, mean_y)
 
     @classmethod
-    def from_points(cls, points: list[Point]) -> Self:
+    def around(cls, points: list[Point]) -> Self:
         """ from a set of points, get the box that surrounds them all """
         min_x = min(p.x for p in points)
         min_y = min(p.y for p in points)
@@ -82,7 +80,7 @@ class ReadText(NamedTuple):
         a deterministic order.
         """
         points, text, confidence = ocr_result
-        return cls(Box.from_points(points), text, confidence)
+        return cls(Box.around(points), text, confidence)
 
 
 class FoundText(NamedTuple):
@@ -95,4 +93,12 @@ class FormattedText(NamedTuple):
     coordinates: Box
     text: str
     formatted: str
+
+
+class Chapter(NamedTuple):
+    """just a context"""
+    manga_lang: LiteralString
+    url: str
+    comic_name: str
+    chapter_name: str
 
