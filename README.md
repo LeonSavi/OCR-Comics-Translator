@@ -67,4 +67,21 @@ ocr-comics-translator/
 └── tree.txt
 ``` </pre>
 
-## File Structure
+## Simple Usage
+
+Upon completing the installation, In [`main.py`](./main.py) change the **url** with the desired chapter for the website below, and change the source_lang and the name of the comic. Then you can run the script. You will find the .pdf of the chapter in the folder `output/{comic name}`.
+
+Tested websites:
+- [Mangapark](https://mangapark.io/)
+
+## Scripts Explaination
+
+- **main.py**:
+- **scripts/chapter.py**:
+- **scripts/translator.py**:
+- **scripts/cleaner.py**:
+- **scripts/interfaces.py**:
+
+## Contributors
+- LS
+- GB

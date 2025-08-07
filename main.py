@@ -14,7 +14,7 @@ from scripts.chapter import process_chapter
 def main():
 
     ## get inputs from somewhere
-    manga_lang = 'es'
+    source_lang = 'es'
     url = "https://mangapark.net/title/301153-es_419-hadacamera/9280970-vol-6-ch-50"
     comic_name = "hadacamera"
     chapter_name = comic_name+'-'+url[-7::]
@@ -22,7 +22,7 @@ def main():
     deepl_client = DeepLClient(DEEPL_API)
 
     process_chapter(
-        language=manga_lang,
+        language=source_lang,
         url=url,
         comic=comic_name,
         name=chapter_name,

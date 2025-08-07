@@ -6,9 +6,23 @@ class Text_Cleaner():
 
     def __init__(self,
                  txt_lang:str):
+        
         if not self.is_java_installed():
             self.tool = None # LanguageToolPublicAPI does not work
-            raise Warning("Please install java to use language-tool-python")
+            print("Please install java to use language-tool-python")
+        
+        elif txt_lang.lower() == "jp":
+            print('''Japanese Language is not fully supported in language_tool_python.\n
+                          \n
+                          Y (Use the grammar checker)\n
+                          N (Avoid)\n''')
+            
+            answer = input("Proceed anyway? (Y/N)").strip().lower()
+            if answer == 'y':
+                self.tool = language_tool_python.LanguageTool(language=txt_lang)
+            else:
+                self.tool = None
+              
         else:
             self.tool = language_tool_python.LanguageTool(language=txt_lang)
     
