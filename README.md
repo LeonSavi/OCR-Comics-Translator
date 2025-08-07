@@ -83,5 +83,5 @@ Tested websites:
 - **scripts/interfaces.py**:
 
 ## Contributors
-- LS
-- GB
+- LS: Owner/Maintener
+- GB: Contributor
