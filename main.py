@@ -9,6 +9,8 @@ from deepl import DeepLClient
 from deepL_api import api as DEEPL_API
 
 from chapter import process_chapter
+import OCR_comics as ocrc
+
 
 
 def main():
