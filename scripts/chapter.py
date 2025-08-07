@@ -10,15 +10,16 @@ from typing_extensions import LiteralString
 
 from bs4 import BeautifulSoup
 from deepl import DeepLClient
-from deepL_api import api as DEEPL_API
+from APIs import DEEPL_API
 import easyocr
 from PIL import Image
 import requests
 from requests import HTTPError
-import torch
+import language_tool_python as ltp
 
 from scripts.interfaces import Gen
 from scripts.translator import PageTranslator
+from scripts.cleaner import Text_Cleaner
 
 HEADERS = {
     "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
@@ -39,10 +40,18 @@ class Chapter(NamedTuple):
     name: str
     reader: easyocr.Reader
     deepl_client: DeepLClient
+    source_cleaner: Text_Cleaner
+    target_cleaner: Text_Cleaner
+    
 
     def translate(self) -> Gen[Image.Image]:
         for image in self.get_images():
-            pt = PageTranslator(image, self.reader, self.language, self.deepl_client)
+            pt = PageTranslator(image,
+                                self.reader,
+                                self.language,
+                                self.deepl_client,
+                                self.source_cleaner,
+                                self.target_cleaner)
             yield pt.translate()
 
     def process(self):
@@ -103,17 +112,21 @@ def process_chapter(
     name: str,
     *,
     reader: easyocr.Reader | None,
+    gpu: bool | None,
     deepl_client: DeepLClient | None
 ):
 
     provided_reader = reader or easyocr.Reader(
         [language.lower(), 'en'],
         detector='DB',
-        gpu=torch.cuda.is_available()
-    )    
-    provided_deepl = deepl_client or DeepLClient(DEEPL_API)
+        gpu = gpu,
+    )
 
-    c = Chapter(language, url, comic, name, provided_reader, provided_deepl)
+    provided_deepl = deepl_client or DeepLClient(DEEPL_API)
+    source_cleaner = Text_Cleaner(language)
+    target_cleaner = Text_Cleaner('en')
+
+    c = Chapter(language, url, comic, name, provided_reader, provided_deepl, source_cleaner, target_cleaner)
     c.process()
 
 

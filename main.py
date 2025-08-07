@@ -6,7 +6,7 @@
 #         -> main.py
 
 from deepl import DeepLClient
-from deepL_api import api as DEEPL_API
+from APIs import DEEPL_API
 
 from scripts.chapter import process_chapter
 
@@ -19,8 +19,6 @@ def main():
     comic_name = "hadacamera"
     chapter_name = comic_name+'-'+url[-7::]
 
-    ## use them
-
     deepl_client = DeepLClient(DEEPL_API)
 
     process_chapter(
@@ -30,6 +28,7 @@ def main():
         name=chapter_name,
         # the following 2 are kw only, but are explicitly optional
         reader=None,
+        gpu = False,
         deepl_client=deepl_client
     )
 

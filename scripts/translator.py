@@ -17,7 +17,7 @@ import easyocr
 from PIL import Image, ImageDraw, ImageFont
 
 from scripts.interfaces import Box, FoundText, FormattedText, Gen, ReadText
-
+from scripts.cleaner import Text_Cleaner
 
 # pixel difference between mean x and y axis of previous text box to following text box to be considered as part of the same sentence.
 THRESHOLD_DIFFERENCE = 35
@@ -28,12 +28,16 @@ class PageTranslator(NamedTuple):
     reader: easyocr.Reader
     manga_lang: LiteralString
     deepl: DeepLClient
+    source_cleaner: Text_Cleaner
+    target_cleaner: Text_Cleaner
 
     def translate(self) -> Image.Image:
         blocks = self.find_text_in_image()
         trad_block = deepL_translate(
             self.deepl,
             blocks,
+            self.source_cleaner,
+            self.target_cleaner,
             source_l = self.manga_lang.upper(),
             target_l = "EN-GB"
         )
@@ -99,7 +103,7 @@ class PageTranslator(NamedTuple):
         font_path = ffont_path("DejaVuSans.ttf")
         image = Image.open(BytesIO(self.image))
         draw = ImageDraw.Draw(image)
-        font_txt = ImageFont.truetype(font_path, 13)
+        font_txt = ImageFont.truetype(font_path, 12)
 
         translated_text = list(translated_text)
 
@@ -109,7 +113,7 @@ class PageTranslator(NamedTuple):
             max_x,max_y = max(x),max(y)
             draw.rectangle([min_x,min_y,max_x,max_y], fill="white")
             draw.multiline_text(
-                xy=(min_x,max_y), # top_left does not give the right output
+                xy=(min_x,min_y), # top_left does not give the right output
                 # anchor='mm',
                 text=formatted,
                 fill ="black",
@@ -122,7 +126,9 @@ class PageTranslator(NamedTuple):
 
 def deepL_translate(
     deepl_client: DeepLClient,
-    blocks: Iterable[FoundText], 
+    blocks: Iterable[FoundText],
+    source_cleaner: Text_Cleaner,
+    target_cleaner: Text_Cleaner, 
     source_l: Optional[LiteralString] = "ES", 
     target_l: Optional[LiteralString] = "EN-GB"
     ) -> Gen[FormattedText]:
@@ -132,7 +138,7 @@ def deepL_translate(
 
         ## One API Call
     blocks = list(blocks)
-    sentences = [text for _, text, _ in blocks]
+    sentences = source_cleaner.clean_up([text for _, text, _ in blocks]) 
 
     try:   
         traductions = deepl_client.translate_text(
@@ -142,7 +148,8 @@ def deepL_translate(
         )
 
         for (coord, text, n_lines), translated in zip(blocks, traductions):
-            formatted_trad = split_text(strigify(translated.text), n_lines)
+            translated_txt = strigify(target_cleaner.clean_up(translated.text)) # maybe to streamline that strigfy
+            formatted_trad = split_text(translated_txt, n_lines)
             yield FormattedText(coord, text, formatted_trad)
 
     except:
@@ -204,9 +211,9 @@ def surrounding_box(coord1: Box, coord2: Optional[Box]=None) -> Box:
 
 
 def handle_newline_text(text1:str, text2:str = '') -> str:
-
-    if (text1[-1] == '-'): 
-        return text1.removesuffix("-") + text2
+    text1 = text1.strip()
+    if text1.endswith('-') or text1.endswith('_'): 
+        return text1[:-1] + text2
     else:
         return text1 + ' ' + text2 #add blank if it s not a continuation 
 
