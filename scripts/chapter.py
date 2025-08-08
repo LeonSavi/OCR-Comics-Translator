@@ -19,7 +19,7 @@ import language_tool_python as ltp
 
 from scripts.interfaces import Gen
 from scripts.translator import PageTranslator
-from scripts.cleaner import Text_Cleaner
+from scripts.cleaner import TextCleaner
 
 HEADERS = {
     "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
@@ -40,8 +40,8 @@ class Chapter(NamedTuple):
     name: str
     reader: easyocr.Reader
     deepl_client: DeepLClient
-    source_cleaner: Text_Cleaner
-    target_cleaner: Text_Cleaner
+    source_cleaner: TextCleaner
+    target_cleaner: TextCleaner
     
 
     def translate(self) -> Gen[Image.Image]:
@@ -117,14 +117,14 @@ def process_chapter(
 ):
 
     provided_reader = reader or easyocr.Reader(
-        [language.lower(), 'en'],
+        [language.lower(),], # you can detect multiple languages by adding those into the list
         detector='DB',
         gpu = gpu,
     )
 
     provided_deepl = deepl_client or DeepLClient(DEEPL_API)
-    source_cleaner = Text_Cleaner(language)
-    target_cleaner = Text_Cleaner('en')
+    source_cleaner = TextCleaner(language)
+    target_cleaner = TextCleaner('en')
 
     c = Chapter(language, url, comic, name, provided_reader, provided_deepl, source_cleaner, target_cleaner)
     c.process()

@@ -17,7 +17,7 @@ import easyocr
 from PIL import Image, ImageDraw, ImageFont
 
 from scripts.interfaces import Box, FoundText, FormattedText, Gen, ReadText
-from scripts.cleaner import Text_Cleaner
+from scripts.cleaner import TextCleaner
 
 # pixel difference between mean x and y axis of previous text box to following text box to be considered as part of the same sentence.
 THRESHOLD_DIFFERENCE = 35
@@ -28,8 +28,8 @@ class PageTranslator(NamedTuple):
     reader: easyocr.Reader
     manga_lang: LiteralString
     deepl: DeepLClient
-    source_cleaner: Text_Cleaner
-    target_cleaner: Text_Cleaner
+    source_cleaner: TextCleaner
+    target_cleaner: TextCleaner
 
     def translate(self) -> Image.Image:
         blocks = self.find_text_in_image()
@@ -127,8 +127,8 @@ class PageTranslator(NamedTuple):
 def deepL_translate(
     deepl_client: DeepLClient,
     blocks: Iterable[FoundText],
-    source_cleaner: Text_Cleaner,
-    target_cleaner: Text_Cleaner, 
+    source_cleaner: TextCleaner,
+    target_cleaner: TextCleaner, 
     source_l: Optional[LiteralString] = "ES", 
     target_l: Optional[LiteralString] = "EN-GB"
     ) -> Gen[FormattedText]:

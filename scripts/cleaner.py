@@ -2,7 +2,7 @@ import shutil
 import language_tool_python
 
 
-class Text_Cleaner():
+class TextCleaner():
 
     def __init__(self,
                  txt_lang:str):
