@@ -17,41 +17,19 @@ import requests
 from requests import HTTPError
 
 
-class TextCleaner:
-
-    def __init__(self, txt_lang:str):
-        
-        if not self.is_java_installed():
-            self.tool = None # LanguageToolPublicAPI does not work
-            print("Please install java to use language-tool-python")
-        elif txt_lang.lower() == "jp":
-            print('''Japanese Language is not fully supported in language_tool_python.\n
-                          \n
-                          Y (Use the grammar checker)\n
-                          N (Avoid)\n''')
-            answer = input("Proceed anyway? (Y/N)").strip().lower()
-            if answer == 'y':
-                self.tool = language_tool_python.LanguageTool(language=txt_lang)
-            else:
-                self.tool = None
-        else:
-            self.tool = language_tool_python.LanguageTool(language=txt_lang)
-    
-    def _language_tool(self,text:str):
-        return language_tool_python.utils.correct(text, self.tool.check(text))
-    
-    def clean_up(self, text: str | list[str]) -> str | list[str]:
-        if not self.is_java_installed():
-            return text
-        if isinstance(text, list):
-            return list(map(self._language_tool, text))
-        elif isinstance(text, str):
-            return self._language_tool(text)
-        raise Exception("unrechable")
-    
-    @staticmethod
-    def is_java_installed() -> bool:
-        return shutil.which("java") is not None
+def clean_text(lang: str, txt: str | list[str]) -> str | list[str]:
+    _is_java_installed = shutil.which("java") is not None
+    if not _is_java_installed:
+        print("Please install java to use language-tool-python")
+        return txt
+    if lang.lower() == "jp":
+        print("Japanese Language is not fully supported in language_tool_python.")
+    tool = language_tool_python.LanguageTool(language=lang)
+    if isinstance(txt, list):
+        return list(map(tool, txt))
+    elif isinstance(txt, str):
+        return tool(txt)
+    raise Exception("unrechable")
 
 
 class Point(NamedTuple):
@@ -102,12 +80,7 @@ class Box(NamedTuple):
 
     @classmethod
     def default(cls) -> Self:
-        return cls(
-            Point(0, 0),
-            Point(0, 0),
-            Point(0, 0),
-            Point(0, 0)
-        )
+        return cls(Point(0, 0), Point(0, 0), Point(0, 0), Point(0, 0))
 
 
 class ReadText(NamedTuple):
@@ -193,6 +166,7 @@ def handle_newline_text(text1:str, text2:str = '') -> str:
     else:
         return _text1 + ' ' + text2 #add blank if it s not a continuation 
 
+
 def cleanup_spanish(text: str) -> str:
     """assumes spanish text"""
     if len(text) < 2:
@@ -272,31 +246,48 @@ def translate_img(
     return apply_translation(image, trad_block)
 
 
+def _translation_str(
+    deeplc: deepl.DeepLClient,
+    sentences: str | list[str],
+    source_l: LiteralString,
+    target_l: LiteralString
+) -> list[str]:
+    # handle deepl api errors
+    try:
+        traductions = deeplc.translate_text(
+            sentences,
+            source_lang=source_l,
+            target_lang=target_l
+        )
+    except ValueError as e:
+        print(e)
+        traductions = []
+    # uniform shape
+    if not isinstance(traductions, list):
+        traductions = [traductions]
+    return [str(t.text) for t in traductions]
+
+
 def deepL_translate(
     blocks: Iterable[FoundText], 
     deeplc: deepl.DeepLClient,
     source_l: LiteralString = "ES", 
     target_l: LiteralString = EN_GB
 ) -> Iterable[FormattedText]:
-    # deepl_client.translate_text( returns the following thing
-    #  -> Union[TextResult, List[TextResult]]:
     # https://github.com/DeepLcom/deepl-python/blob/main/deepl/api_data.py#L12
-
     _blocks = list(blocks)
-    sentences = TextCleaner(source_l).clean_up([x.text for x in _blocks])
-    try:
-        traductions = deeplc.translate_text(sentences, source_lang=source_l, target_lang=target_l)
-
+    sentences = clean_text(source_l, [x.text for x in _blocks])
+    traductions = _translation_str(deeplc, sentences, source_l, target_l)
+    if not traductions:
+        yield FormattedText(Box.default(), "", "")
+    else:
         for (coord, text, n_lines), translated in zip(_blocks, traductions):
-            translated_txt = _stringify(TextCleaner(target_l).clean_up(translated.text))
+            translated_txt = _stringify(clean_text(target_l, translated))
             formatted_trad = split_text(translated_txt, n_lines)
             yield FormattedText(coord, text, formatted_trad)
-    except ValueError as e:
-        print(e)
-        yield FormattedText(Box.default(), "", "")
 
 
-def _stringify(thing) -> str:
+def _stringify(thing: str | list[str]) -> str:
     if isinstance(thing, list):
         return " ".join(map(str, thing))
     else:
