@@ -82,5 +82,5 @@ Upon completing the installation, In [`main.py`](./main.py) change the **url** w
   -  `ReadText`,`FoundText`,`FormattedText` to deal with `easyocr` outputs.
 
 ## Contributors
-- [@LeonSavi](https://github.com/LeonSavi) – Creator & Maintainer  
-- [@GBeggiato](https://github.com/GBeggiato) – Contributor
+- [@LeonSavi](https://github.com/LeonSavi) - Creator & Maintainer  
+- [@GBeggiato](https://github.com/GBeggiato) - Contributor
