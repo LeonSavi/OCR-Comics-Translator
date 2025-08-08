@@ -72,14 +72,19 @@ class Box(NamedTuple):
             Point(max_x, max_y)
         )
     
-    def defaultBox() -> Self:
-        return Box(
+    @classmethod
+    def defaultBox(cls) -> Self:
+        return cls(
             bottom_left=Point(0, 0),
             bottom_rigth=Point(0, 0),
             top_left=Point(0, 0),
             top_right=Point(0, 0)
         )
         
+
+
+
+
 
 
 class ReadText(NamedTuple):
