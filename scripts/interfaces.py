@@ -82,11 +82,6 @@ class Box(NamedTuple):
         )
         
 
-
-
-
-
-
 class ReadText(NamedTuple):
     """
     custom type for what easyocr.Reader().readtext() returns
