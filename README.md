@@ -53,15 +53,16 @@ ocr-comics-translator/
 ├── APIs.py
 ├── LICENSE
 ├── README.md
+├── alternative.py
 ├── main.py
 ├── output
 ├── requirements.txt
 └── scripts
-   ├── __init__.py
-   ├── chapter.py
-   ├── cleaner.py
-   ├── interfaces.py
-   └── translator.py
+    ├── __init__.py
+    ├── chapter.py
+    ├── cleaner.py
+    ├── interfaces.py
+    └── translator.py
  </pre>
 
 ## Simple Usage
@@ -74,12 +75,14 @@ Upon completing the installation, In [`main.py`](./main.py) change the **url** w
 ## Scripts Explaination
 
 - **main.py**: Use this script to process and translate an entire manga chapter.
+- **APIs.py**: Your DEEPL API.
 - **scripts/chapter.py**: Handles Chapter-level logic by wrapping the url, source language, etc into a `Chapter` object, it retrieves the images apply the translation pipeline page by page.
 - **scripts/translator.py**: Pages are translated individually via `PageTranslator` class. Text is detected using the library `easyocr`, merged to identify text boxes, cleaned, translates it with DeepL API, and pastes the translated text back onto the image.
 - **scripts/cleaner.py**: Contains the `TextCleaner` class, which performs grammar correction and light polishing using `language_tool_python`. Japanese is not fully supported.
 - **scripts/interfaces.py**: Defines the core data structures:
   -  `Point`,`Box` for Geometry
   -  `ReadText`,`FoundText`,`FormattedText` to deal with `easyocr` outputs.
+- **alternative.py**: (_In mantainance_) codes above streamlined in a unique file. 
 
 ## Contributors
 - [@LeonSavi](https://github.com/LeonSavi) - Creator & Maintainer  
