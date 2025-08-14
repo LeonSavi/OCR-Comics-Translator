@@ -13,9 +13,7 @@ class TextCleaner():
         
         elif txt_lang.lower() == "jp":
             print('''Japanese Language is not fully supported in language_tool_python.\n
-                          \n
-                          Y (Use the grammar checker)\n
-                          N (Avoid)\n''')
+                          \n''')
             
             answer = input("Proceed anyway? (Y/N)").strip().lower()
             if answer == 'y':

@@ -2,11 +2,9 @@
 from io import BytesIO
 from pathlib import Path
 import re
-from typing import (
-    NamedTuple,
-    Optional,
-)
+from typing import NamedTuple
 from typing_extensions import LiteralString
+from tqdm import tqdm
 
 from bs4 import BeautifulSoup
 from deepl import DeepLClient
@@ -45,7 +43,7 @@ class Chapter(NamedTuple):
     
 
     def translate(self) -> Gen[Image.Image]:
-        for image in self.get_images():
+        for image in tqdm(self.get_images()):
             pt = PageTranslator(image,
                                 self.reader,
                                 self.language,

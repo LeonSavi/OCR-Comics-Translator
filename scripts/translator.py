@@ -106,7 +106,6 @@ class PageTranslator(NamedTuple):
         font_txt = ImageFont.truetype(font_path, 12)
 
         translated_text = list(translated_text)
-
         for coordinates, _, formatted in translated_text:
             x,y=zip(*(list(coordinates)))
             min_x,min_y = min(x),min(y)
