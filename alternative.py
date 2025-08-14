@@ -5,11 +5,12 @@ import platform
 import re
 import shutil
 import statistics
-from typing import Iterable, LiteralString, NamedTuple
-from typing_extensions import Self
+from typing import Iterable, NamedTuple
+from typing_extensions import Self, LiteralString
+from tqdm import tqdm
 
 import deepl
-from deepL_api import api as DEEPL_API
+from APIs import DEEPL_API
 import easyocr
 import language_tool_python
 from PIL import Image, ImageDraw, ImageFont
@@ -24,12 +25,19 @@ def clean_text(lang: str, txt: str | list[str]) -> str | list[str]:
         return txt
     if lang.lower() == "jp":
         print("Japanese Language is not fully supported in language_tool_python.")
+
     tool = language_tool_python.LanguageTool(language=lang)
     if isinstance(txt, list):
-        return list(map(tool, txt))
+        # LS: alternetively to use functools import partial
+        return list(map(lambda x: _language_tool(tool,x), txt))
     elif isinstance(txt, str):
-        return tool(txt)
-    raise Exception("unrechable")
+        return _language_tool(tool,txt)
+    raise Exception("unreachable")
+
+def _language_tool(tool,text:str):
+    return language_tool_python.utils.correct(
+        text,
+        tool.check(text))
 
 
 class Point(NamedTuple):
@@ -63,10 +71,10 @@ class Box(NamedTuple):
     @classmethod
     def around(cls, points: list[Point]) -> Self:
         """ from a set of points, get the box that surrounds them all """
-        min_x = min(p.x for p in points)
-        min_y = min(p.y for p in points)
-        max_x = max(p.x for p in points)
-        max_y = max(p.y for p in points)
+        min_x = min(p[0] for p in points)
+        min_y = min(p[1] for p in points)
+        max_x = max(p[0] for p in points)
+        max_y = max(p[1] for p in points)
         return cls.from_minmax(min_x, min_y, max_x, max_y)
 
     @classmethod
@@ -261,7 +269,7 @@ def _translation_str(
         )
     except ValueError as e:
         print(e)
-        traductions = []
+        traductions = ['']
     # uniform shape
     if not isinstance(traductions, list):
         traductions = [traductions]
@@ -294,17 +302,16 @@ def _stringify(thing: str | list[str]) -> str:
         return str(thing)
 
 
-def ffont_path(preferred_font: str="DejaVuSans.ttf") -> str:
+def ffont_path(preferred_font="DejaVuSans.ttf") -> str:
     system = platform.system()
     if system == "Windows":
         font_dir = os.path.join(os.environ['WINDIR'], "Fonts")
         font_path = os.path.join(font_dir, preferred_font)
         return font_path
     elif system == "Linux":
-        font_path = "/usr/share/fonts/truetype/dejavu"
+        font_path = f"/usr/share/fonts/truetype/dejavu/{preferred_font}"
         return font_path
-    raise Exception(f"unsupported platflorm: {system}")
-
+    raise Exception(f"Unsupported platflorm: %s", system)
 
 def apply_translation(image_bytes: bytes, translated_text: Iterable[FormattedText]) -> Image.Image:
     font_path = ffont_path("DejaVuSans.ttf")
@@ -330,9 +337,11 @@ def apply_translation(image_bytes: bytes, translated_text: Iterable[FormattedTex
     return image
 
 
-def translate_chapter(c: Chapter, reader: easyocr.Reader, deeplc: deepl.DeepLClient) -> Iterable[Image.Image]:
+def translate_chapter(c: Chapter,
+                      reader: easyocr.Reader,
+                      deeplc: deepl.DeepLClient) -> Iterable[Image.Image]:
     yield from (
-        translate_img(i, reader, c.manga_lang, deeplc) for i in get_images(c.url)
+        translate_img(i, reader, c.manga_lang, deeplc) for i in tqdm(get_images(c.url))
     )
 
 
@@ -355,7 +364,8 @@ def save(c: Chapter, translated_pages: list[Image.Image]):
 def process_chapter(
     c: Chapter,
     reader: easyocr.Reader=None,
-    deeplc: deepl.DeepLClient=None  
+    deeplc: deepl.DeepLClient=None,
+
 ):
     # handle default args
     _reader = reader or easyocr.Reader(
@@ -381,3 +391,5 @@ def main():
     process_chapter(c)
 
 
+if "__main__" == __name__:
+    main()
