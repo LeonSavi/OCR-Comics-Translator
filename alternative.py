@@ -5,9 +5,8 @@ import platform
 import re
 import shutil
 import statistics
-from typing import Iterable, NamedTuple
+from typing import NamedTuple
 from typing_extensions import Self, LiteralString
-from tqdm import tqdm
 
 import deepl
 from APIs import DEEPL_API
@@ -29,15 +28,17 @@ def clean_text(lang: str, txt: str | list[str]) -> str | list[str]:
     tool = language_tool_python.LanguageTool(language=lang)
     if isinstance(txt, list):
         # LS: alternetively to use functools import partial
-        return list(map(lambda x: _language_tool(tool,x), txt))
+        return [_language_tool(tool, x) for x in txt]
     elif isinstance(txt, str):
         return _language_tool(tool,txt)
     raise Exception("unreachable")
 
-def _language_tool(tool,text:str):
+
+def _language_tool(tool, text: str):
     return language_tool_python.utils.correct(
         text,
-        tool.check(text))
+        tool.check(text)
+    )
 
 
 class Point(NamedTuple):
@@ -57,10 +58,6 @@ class Box(NamedTuple):
     bottom_rigth: Point
     top_left: Point
     top_right: Point
-
-    @classmethod
-    def from_tuple(cls, t: tuple[Point, Point, Point, Point]) -> Self:
-        return cls(*t)
 
     def center(self) -> Point:
         """returns the point in the middle of the box"""
@@ -144,7 +141,7 @@ PATTERN_JPEG = re.compile(r'https[^"\']+?\.jpeg')
 EN_GB = "EN-GB"
 
 
-def get_images(url: str) -> Iterable[bytes]:
+def get_images(url: str) -> list[bytes]:
     response = requests.get(url, headers=HEADERS) 
     # TODO: better error handling
     try:
@@ -153,7 +150,8 @@ def get_images(url: str) -> Iterable[bytes]:
         print(e)
         raise
     haystack = response.content.decode(response.encoding or "utf-8")
-    matches:list[str] = re.findall(PATTERN_JPEG, haystack)
+    matches: list[str] = re.findall(PATTERN_JPEG, haystack)
+    out = []
     for m in matches:
         resp = requests.get(m)
         # TODO: better error handling
@@ -164,10 +162,11 @@ def get_images(url: str) -> Iterable[bytes]:
             raise
         img = resp.content
         assert isinstance(img, bytes), "not all images were bytes"
-        yield img
+        out.append(img)
+    return out
 
 
-def handle_newline_text(text1:str, text2:str = '') -> str:
+def handle_newline_text(text1: str, text2: str='') -> str:
     _text1 = text1.strip()
     if _text1.endswith(("-", "_")):
         return _text1[:-1] + text2
@@ -186,13 +185,16 @@ def cleanup_spanish(text: str) -> str:
         return text
 
 
-def find_text_in_image(image: bytes, reader: easyocr.Reader, manga_lang: str) -> Iterable[FoundText]:
-    iter_list = list(map(
-        ReadText.from_easyocr_readtext,
-        reader.readtext(image, detail=1)
-    ))
+def find_text_in_image(
+    image: bytes, reader: easyocr.Reader, manga_lang: str
+) -> list[FoundText]:
+    iter_list = [
+        ReadText.from_easyocr_readtext(t) for t in reader.readtext(image, detail=1)
+    ]
     # sort boxes vertically, top to bottom
     iter_list.sort(key=lambda x: x.box.center().y)
+
+    out = []
     # more pythonic but less clear
     while iter_list:
         checked = []
@@ -221,7 +223,8 @@ def find_text_in_image(image: bytes, reader: easyocr.Reader, manga_lang: str) ->
         # clean up spanish text
         if manga_lang == "es":
             text = cleanup_spanish(text)
-        yield FoundText(coordinates, text.lower(), line_cnt)
+        out.append(FoundText(coordinates, text.lower(), line_cnt))
+    return out
 
 
 def split_text(text: str, n_lines: int) -> str:
@@ -270,6 +273,9 @@ def _translation_str(
     except ValueError as e:
         print(e)
         traductions = ['']
+        # GB: otherwise the following return 
+        # would fail as str has no attribute ".text"
+        return traductions
     # uniform shape
     if not isinstance(traductions, list):
         traductions = [traductions]
@@ -277,22 +283,24 @@ def _translation_str(
 
 
 def deepL_translate(
-    blocks: Iterable[FoundText], 
+    blocks: list[FoundText], 
     deeplc: deepl.DeepLClient,
     source_l: LiteralString = "ES", 
     target_l: LiteralString = EN_GB
-) -> Iterable[FormattedText]:
+) -> list[FormattedText]:
     # https://github.com/DeepLcom/deepl-python/blob/main/deepl/api_data.py#L12
     _blocks = list(blocks)
     sentences = clean_text(source_l, [x.text for x in _blocks])
     traductions = _translation_str(deeplc, sentences, source_l, target_l)
+    out = []
     if not traductions:
-        yield FormattedText(Box.default(), "", "")
+        out.append(FormattedText(Box.default(), "", ""))
     else:
         for (coord, text, n_lines), translated in zip(_blocks, traductions):
             translated_txt = _stringify(clean_text(target_l, translated))
             formatted_trad = split_text(translated_txt, n_lines)
-            yield FormattedText(coord, text, formatted_trad)
+            out.append(FormattedText(coord, text, formatted_trad))
+    return out
 
 
 def _stringify(thing: str | list[str]) -> str:
@@ -313,7 +321,8 @@ def ffont_path(preferred_font="DejaVuSans.ttf") -> str:
         return font_path
     raise Exception(f"Unsupported platflorm: %s", system)
 
-def apply_translation(image_bytes: bytes, translated_text: Iterable[FormattedText]) -> Image.Image:
+
+def apply_translation(image_bytes: bytes, translated_text: list[FormattedText]) -> Image.Image:
     font_path = ffont_path("DejaVuSans.ttf")
     image = Image.open(BytesIO(image_bytes))
     draw = ImageDraw.Draw(image)
@@ -337,21 +346,30 @@ def apply_translation(image_bytes: bytes, translated_text: Iterable[FormattedTex
     return image
 
 
-def translate_chapter(c: Chapter,
-                      reader: easyocr.Reader,
-                      deeplc: deepl.DeepLClient) -> Iterable[Image.Image]:
-    yield from (
-        translate_img(i, reader, c.manga_lang, deeplc) for i in tqdm(get_images(c.url))
-    )
+def translate_chapter(
+    c: Chapter,
+    reader: easyocr.Reader,
+    deeplc: deepl.DeepLClient
+) -> list[Image.Image]:
+    ## tqdm is a pointless dependency, here is a basic homemade version
+    images = get_images(c.url)
+    n = len(images)
+    out = []
+    for i, img in enumerate(images):
+        print("processing image: %10d / %3d"%(i, n), end="\r", flush=True)
+        out.append(translate_img(img, reader, c.manga_lang, deeplc))
+    return out
 
 
 def pdf_bytes(pages: list[Image.Image]) -> BytesIO:
     ## is this still a list of images ?
     images = [i.convert('RGB') for i in pages]
-    _pdf_bytes = BytesIO()
-    images[0].save(_pdf_bytes, format='PDF', save_all=True, append_images=images[1:])
-    _pdf_bytes.seek(0)
-    return _pdf_bytes
+    pdf = BytesIO()
+    images[0].save(
+        pdf, format='PDF', save_all=True, append_images=images[1:]
+    )
+    pdf.seek(0)
+    return pdf
 
 
 def save(c: Chapter, translated_pages: list[Image.Image]):
@@ -365,7 +383,6 @@ def process_chapter(
     c: Chapter,
     reader: easyocr.Reader=None,
     deeplc: deepl.DeepLClient=None,
-
 ):
     # handle default args
     _reader = reader or easyocr.Reader(
@@ -393,3 +410,4 @@ def main():
 
 if "__main__" == __name__:
     main()
+
