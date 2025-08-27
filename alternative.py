@@ -5,7 +5,7 @@ import platform
 import re
 import shutil
 import statistics
-from typing import NamedTuple
+from typing import NamedTuple, Optional
 from typing_extensions import Self, LiteralString
 
 import deepl
@@ -185,12 +185,20 @@ def cleanup_spanish(text: str) -> str:
         return text
 
 
-def find_text_in_image(
-    image: bytes, reader: easyocr.Reader, manga_lang: str
-) -> list[FoundText]:
-    iter_list = [
-        ReadText.from_easyocr_readtext(t) for t in reader.readtext(image, detail=1)
-    ]
+def _parse_readtext(image: bytes, reader: easyocr.Reader) -> list[ReadText]:
+    """to check result shape and inject our types"""
+    read = reader.readtext(image, detail=1)
+    try:
+        assert isinstance(read, list)
+        assert all(len(i)==3 and isinstance(i, (list, tuple)) for i in read)
+    except AssertionError as e:
+        print("the data from 'reader.readtext()' does not have the proper shape")
+        raise e
+    return [ReadText.from_easyocr_readtext(tuple(t)) for t in read]
+
+
+def find_text_in_image(image: bytes, reader: easyocr.Reader, manga_lang: str) -> list[FoundText]:
+    iter_list = _parse_readtext(image, reader)
     # sort boxes vertically, top to bottom
     iter_list.sort(key=lambda x: x.box.center().y)
 
@@ -381,15 +389,11 @@ def save(c: Chapter, translated_pages: list[Image.Image]):
 
 def process_chapter(
     c: Chapter,
-    reader: easyocr.Reader=None,
-    deeplc: deepl.DeepLClient=None,
+    reader: Optional[easyocr.Reader]=None,
+    deeplc: Optional[deepl.DeepLClient]=None,
 ):
     # handle default args
-    _reader = reader or easyocr.Reader(
-        [c.manga_lang.lower(), 'en'], 
-        detector='DB',
-        gpu=False
-    ) 
+    _reader = reader or easyocr.Reader([c.manga_lang.lower(), 'en'], gpu=False) 
     _deepl_client = deeplc or deepl.DeepLClient(DEEPL_API)
     translated_pages = list(translate_chapter(c, _reader, _deepl_client))
     save(c, translated_pages)
