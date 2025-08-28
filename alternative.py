@@ -25,6 +25,11 @@ def clean_text(lang: str, txt: str | list[str]) -> str | list[str]:
     if lang.lower() == "jp":
         print("Japanese Language is not fully supported in language_tool_python.")
 
+    if txt == []:
+        # to solve deepL issue: Bad request, message: Bad request. Reason: 
+        # The field text must be a string or array type with a minimum length of '1'.
+        txt = ['']
+
     tool = language_tool_python.LanguageTool(language=lang)
     if isinstance(txt, list):
         # LS: alternetively to use functools import partial
@@ -273,6 +278,7 @@ def _translation_str(
 ) -> list[str]:
     # handle deepl api errors
     try:
+        print(sentences)
         traductions = deeplc.translate_text(
             sentences,
             source_lang=source_l,
