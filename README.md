@@ -1,6 +1,6 @@
 # OCR Comics Translator
 
-A Python tool that extracts text from manga/comic images from a website using OCR and translates it into English or another target language using DeepL API.
+A Python tool that extracts text from manga/comic images from a website using OCR, translates it into English or another target language using DeepL API, and compiles the translated chapter into a PDF.
 
 ## Motivation
 
