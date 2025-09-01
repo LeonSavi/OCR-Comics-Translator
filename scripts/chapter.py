@@ -44,7 +44,13 @@ class Chapter(NamedTuple):
     
 
     def translate(self) -> Gen[Image.Image]:
+        i = 1 
         for image in tqdm(self.get_images()):
+            if i>=21:
+                # TO DO: skip long iterations : 
+                # page 21 (website ads) gives issue and u need to ctrl+C to move on??
+                continue
+            i +=1
             pt = PageTranslator(image,
                                 self.reader,
                                 self.language,
