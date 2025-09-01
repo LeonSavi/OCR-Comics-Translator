@@ -5,6 +5,7 @@ import re
 from typing import NamedTuple
 from typing_extensions import LiteralString
 from tqdm import tqdm
+from icecream import ic
 
 from bs4 import BeautifulSoup
 from deepl import DeepLClient
@@ -63,6 +64,7 @@ class Chapter(NamedTuple):
 
     def save_chapter(self, pages: list[Image.Image]):
         with self.build_save_location().open("wb") as f:
+            ic(f'Saving PDF Chapter')
             stream = self.pdf_bytes(pages).getvalue()
             f.write(stream)
 
