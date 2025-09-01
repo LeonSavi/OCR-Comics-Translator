@@ -8,6 +8,7 @@ from typing import (
     NamedTuple,
     Optional
 )
+import icecream as ic
 
 from typing_extensions import LiteralString
 
@@ -138,12 +139,12 @@ def deepL_translate(
         ## One API Call
     blocks = list(blocks)
     sentences = source_cleaner.clean_up([text for _, text, _ in blocks]) 
-
     try:   
         traductions = deepl_client.translate_text(
             sentences,
             source_lang=source_l,
-            target_lang=target_l
+            target_lang=target_l,
+            model_type = 'quality_optimized'
         )
 
         for (coord, text, n_lines), translated in zip(blocks, traductions):
