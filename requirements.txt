@@ -1,7 +1,6 @@
 beautifulsoup4==4.13.5
 deepl==1.22.0
 easyocr==1.7.2
-icecream==2.1.7
 language_tool_python==2.9.4
 Pillow==11.3.0
 Requests==2.32.5
