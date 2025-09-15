@@ -5,7 +5,6 @@ import re
 from typing import NamedTuple
 from typing_extensions import LiteralString
 from tqdm import tqdm
-from icecream import ic
 
 from bs4 import BeautifulSoup
 from deepl import DeepLClient
@@ -19,6 +18,8 @@ import language_tool_python as ltp
 from scripts.interfaces import Gen
 from scripts.translator import PageTranslator
 from scripts.cleaner import TextCleaner
+
+from scripts.utils import LoopingTime, Colours
 
 HEADERS = {
     "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
@@ -44,20 +45,17 @@ class Chapter(NamedTuple):
     
 
     def translate(self) -> Gen[Image.Image]:
-        i = 1 
-        for image in tqdm(self.get_images()):
-            if i>=21:
-                # TO DO: skip long iterations : 
-                # page 21 (website ads) gives issue and u need to ctrl+C to move on??
-                continue
-            i +=1
-            pt = PageTranslator(image,
+        looper = LoopingTime(timeout=25)
+
+        func = lambda x: PageTranslator(x,
                                 self.reader,
                                 self.language,
                                 self.deepl_client,
                                 self.source_cleaner,
-                                self.target_cleaner)
-            yield pt.translate()
+                                self.target_cleaner).translate()
+
+        yield from looper.iterate(self.get_images(), func)
+
 
     def process(self):
         self.save_chapter(list(self.translate()))
@@ -70,7 +68,7 @@ class Chapter(NamedTuple):
 
     def save_chapter(self, pages: list[Image.Image]):
         with self.build_save_location().open("wb") as f:
-            ic(f'Saving PDF Chapter')
+            print(f'{Colours.HEADER}Saving PDF Chapter{Colours.END}')
             stream = self.pdf_bytes(pages).getvalue()
             f.write(stream)
 

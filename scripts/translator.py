@@ -8,7 +8,6 @@ from typing import (
     NamedTuple,
     Optional
 )
-import icecream as ic
 
 from typing_extensions import LiteralString
 
